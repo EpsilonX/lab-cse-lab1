@@ -245,25 +245,22 @@ inode_manager::read_file(uint32_t inum, char **buf_out, int *size)
   struct inode *ino = get_inode(inum);
   if(ino){
 	*size = ino->size;
-	int new_size =((*size)/BLOCK_SIZE + 1)*BLOCK_SIZE;
+	int new_size =((*size)/BLOCK_SIZE + 1)*BLOCK_SIZE; //NOTE:new_size is the actual size a file will use in disk, otherwise the program will have segment-fault problem. To fix this problem, I've spent the whole night!
 	*buf_out = (char*)malloc(sizeof(char)*new_size);
 	char *buf = *buf_out;
 	while(true){
+		//get data from blocks using while-loop
 	   int x = (ino->used_blocks > NDIRECT) ? NDIRECT:ino->used_blocks;
-	       printf("x= %d",x);
-		   printf("used_blocks= %d",ino->used_blocks);
 		   for(int i=0;i < x;i++){		
-
 			   bm->read_block(ino->blocks[i],buf+i*BLOCK_SIZE);
 			}
+		   //if there's no inode block, break loop
 		   if ( ino->used_blocks <= NDIRECT ) break;
-		   ino = get_inode(ino->blocks[NDIRECT]);
-		   buf += NDIRECT*BLOCK_SIZE;
+		   ino = get_inode(ino->blocks[NDIRECT]); //get inode from No.33 block.
+		   buf += NDIRECT*BLOCK_SIZE; //NOTE:must increase the buf pointer
 	}
 
 }
-  printf("readblock before return\n");
-  //delete ino;
   return;
 }
 
@@ -290,6 +287,7 @@ inode_manager::write_file(uint32_t inum, const char *buf, int size)
   //alloc new blocks
   int need_block = (size % BLOCK_SIZE>0) ? size / BLOCK_SIZE+1 : size / BLOCK_SIZE;
   if (restblocks - need_block < 0 ){
+	  //if there's no rest blocks
 	  return;
   }
   ino->size = size;
@@ -303,17 +301,19 @@ inode_manager::write_file(uint32_t inum, const char *buf, int size)
   ino->used_blocks = need_block;
   uint32_t a_block;
   for (int i=0;i<need_block;i++){
+	//alloc blocks from No.1 to No.32
 	a_block = bm->alloc_block();
 	ino->blocks[i] = a_block;
 	bm->write_block(a_block,buf+i*BLOCK_SIZE);
   }
   if(need_block2){
+	  //if the block needed is larger than 32, then use the No.33 inode block
 	  ino->used_blocks ++;
 	  uint32_t new_file = alloc_inode(extent_protocol::T_FILE);
 	  ino->blocks[NDIRECT]=new_file;
 	  write_file(new_file,buf+NDIRECT*BLOCK_SIZE,size-NDIRECT*BLOCK_SIZE);
   }
-  put_inode(inum,ino);
+  put_inode(inum,ino); //NOTE: it's import to submit
   delete ino;
   return;
 }
