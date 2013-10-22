@@ -13,6 +13,9 @@
 extent_client *ec;
 int total_score = 0;
 
+template <class T>
+std::string ConvertToString(T);
+
 int test_create_and_getattr()
 {
     int i, rnum;
@@ -161,7 +164,7 @@ int test_put_and_get()
             memset(temp, 0, 10);
             sprintf(temp, "%d", contents[i]);
             std::string buf2(temp);
-            if (buf.compare(buf2) != 0) {
+			if (buf.compare(buf2) != 0) {
                 std::cout << "[TEST_ERROR] : error get, not consistent with put " << 
                     buf << " <-> " << buf2 << "\n\n";
                 return 5;

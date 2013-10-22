@@ -153,6 +153,7 @@ inode_manager::alloc_inode(uint32_t type)
 	ino->used_blocks = 0;
 	ino->size = 0;
 	put_inode(last_inum,ino);
+	delete ino;
 	return last_inum;
 }
 
@@ -166,6 +167,7 @@ inode_manager::free_inode(uint32_t inum)
    */
   struct inode *ino = get_inode(inum);
   if(ino){
+	  ino->type = 0;
 	  if(ino->used_blocks > NDIRECT){
 		  ino->used_blocks = NDIRECT;
 		  free_inode(ino->blocks[NDIRECT]);
@@ -174,7 +176,8 @@ inode_manager::free_inode(uint32_t inum)
 		  bm->free_block(ino->blocks[i]);
 	  }
 	  printf("free_inode inum=%d\n",inum);
-	  delete ino;
+	  put_inode(inum,ino);
+	  delete ino;	  
   }
  
   return;
@@ -242,24 +245,23 @@ inode_manager::read_file(uint32_t inum, char **buf_out, int *size)
   struct inode *ino = get_inode(inum);
   if(ino){
 	*size = ino->size;
-	tempchar = new char[*size];
-	*buf_out = tempchar;
+	int new_size =((*size)/BLOCK_SIZE + 1)*BLOCK_SIZE;
+	*buf_out = (char*)malloc(sizeof(char)*new_size);
 	char *buf = *buf_out;
-	std::cout<<"[Jeffrey read_file] : size = " << ino->size << ", inum = " << inum <<"\n\n";
 	while(true){
 	   int x = ino->used_blocks > NDIRECT ? NDIRECT:ino->used_blocks;
+	       printf("x= %d",x);
 		   for(int i=0;i < x;i++){		
 
 			   bm->read_block(ino->blocks[i],buf+i*BLOCK_SIZE);
-			   printf("readblock %d\n",ino->blocks[i]);
-			   printf("readblock buf=%s\n",*buf_out);
 			}
-		   if ( x < NDIRECT ) break;
+		   if ( x <= NDIRECT ) break;
 		   ino = get_inode(ino->blocks[NDIRECT]);
 	}
-  }
-  
+
+}
   printf("readblock before return\n");
+  //delete ino;
   return;
 }
 
@@ -275,7 +277,6 @@ inode_manager::write_file(uint32_t inum, const char *buf, int size)
    */
   struct inode *ino = get_inode(inum);
 
-	std::cout<<"[Jeffrey write_file] : size = " << size << ", inum = " << inum <<"\n\n";
   if (ino->used_blocks > 0){
 	//free used blocks
 	if (ino->used_blocks > NDIRECT){
@@ -291,7 +292,6 @@ inode_manager::write_file(uint32_t inum, const char *buf, int size)
   }
   ino->size = size;
 
-	std::cout<<"[Jeffrey write_file] : ino->size = " << size << ", inum = " << inum <<"\n\n";
   restblocks -= need_block;
   int need_block2=0;
   if(need_block > NDIRECT){
@@ -311,6 +311,7 @@ inode_manager::write_file(uint32_t inum, const char *buf, int size)
 	  write_file(new_file,buf+NDIRECT*BLOCK_SIZE,size-NDIRECT*BLOCK_SIZE);
   }
   put_inode(inum,ino);
+  delete ino;
   return;
 }
 
@@ -323,12 +324,13 @@ inode_manager::getattr(uint32_t inum, extent_protocol::attr &a)
    * you can refer to "struct attr" in extent_protocol.h
    */
   struct inode *node = get_inode(inum);
+  if (node == NULL) return;
   a.size = node->size;
   a.atime = node->atime;
   a.mtime = node->mtime;
   a.ctime = node->ctime;
   a.type = node->type;  
-	std::cout<<"[Jeffrey getattr] : size = " << node->size << ", inum = " << inum <<"\n\n";
+  delete node;	
   return;
 }
 
@@ -339,6 +341,7 @@ inode_manager::remove_file(uint32_t inum)
    * your lab1 code goes here
    * note: you need to consider about both the data block and inode of the file
    */
+  free_inode(inum);	
   
   return;
 }

@@ -46,10 +46,11 @@ int extent_server::get(extent_protocol::extentid_t id, std::string &buf)
   im->read_file(id, &cbuf, &size);
   if (size == 0)
     buf = "";
-  else {
-    buf.assign(cbuf, size);
-	printf("server wirte buf=%s",cbuf);
-    //free(cbuf);
+  else { 
+	printf("hehe %d\n",size);
+    buf.assign(cbuf,size);
+	//printf("server get buf=%s",cbuf);
+    free(cbuf);
   }
 
   return extent_protocol::OK;
