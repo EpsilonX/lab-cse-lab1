@@ -5,6 +5,7 @@
 
 #include <stdint.h>
 #include "extent_protocol.h" // TODO: delete it
+#include <stdio.h>
 
 #define DISK_SIZE  1024*1024*16
 #define BLOCK_SIZE 512
@@ -25,6 +26,9 @@ class disk {
 };
 
 // block layer -----------------------------------------
+
+// max bitmap size
+#define MAXMAP		(BLOCK_NUM)/32
 
 typedef struct superblock {
   uint32_t size;
@@ -67,8 +71,6 @@ class block_manager {
 // Block containing bit for block b
 #define BBLOCK(b) ((b)/BPB + 2)
 
-// max bitmap size
-#define MAXMAP		(BLOCK_NUM)/32
 
 #define NDIRECT 32
 #define NINDIRECT (BLOCK_SIZE / sizeof(uint))
@@ -91,6 +93,7 @@ class inode_manager {
   struct inode* get_inode(uint32_t inum);
   void put_inode(uint32_t inum, struct inode *ino);
   int restblocks;
+  char *tempchar;	
 
  public:
   inode_manager();

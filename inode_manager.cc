@@ -1,5 +1,6 @@
 #include "inode_manager.h"
 #include "gettime.h"
+#include <cstring>
 
 // disk layer -----------------------------------------
 
@@ -101,7 +102,7 @@ block_manager::block_manager()
   sb.ninodes = INODE_NUM;
   p_bmp =INODE_NUM/IPB + BLOCK_NUM/BPB +3;
   memset(bitmap,0,sizeof(uint32_t)*MAXMAP);
-  for(int i = 0;i<p_bmp;i++) set_bmp(i,1);
+  for(uint32_t i = 0;i<p_bmp;i++) set_bmp(i,1);
 }
 
 void
@@ -146,7 +147,7 @@ inode_manager::alloc_inode(uint32_t type)
 	}	
 	last_inum ++;
 	struct inode *ino;
-	ino = (struct inode*)malloc(sizeof(struct inode));
+	ino = new inode();
 	ino->ctime = ino->atime = ino->mtime = tp.tv_sec;
 	ino->type = type;
 	ino->used_blocks = 0;
@@ -169,9 +170,10 @@ inode_manager::free_inode(uint32_t inum)
 		  ino->used_blocks = NDIRECT;
 		  free_inode(ino->blocks[NDIRECT]);
 	  } 
-	  for(int i=0;i<ino->used_blocks;i++){
+	  for(uint32_t i=0;i<ino->used_blocks;i++){
 		  bm->free_block(ino->blocks[i]);
 	  }
+	  printf("free_inode inum=%d\n",inum);
 	  delete ino;
   }
  
@@ -203,7 +205,7 @@ inode_manager::get_inode(uint32_t inum)
     return NULL;
   }
 
-  ino = (struct inode*)malloc(sizeof(struct inode));
+  ino = new inode();
   *ino = *ino_disk;
 
   return ino;
@@ -240,20 +242,24 @@ inode_manager::read_file(uint32_t inum, char **buf_out, int *size)
   struct inode *ino = get_inode(inum);
   if(ino){
 	*size = ino->size;
-	*buf_out = new char[*size];
+	tempchar = new char[*size];
+	*buf_out = tempchar;
 	char *buf = *buf_out;
+	std::cout<<"[Jeffrey read_file] : size = " << ino->size << ", inum = " << inum <<"\n\n";
 	while(true){
 	   int x = ino->used_blocks > NDIRECT ? NDIRECT:ino->used_blocks;
-		   char *block_buff;
 		   for(int i=0;i < x;i++){		
-			   bm->read_blocks(ino->blocks[i],block_buff);
-			   buf += block_buff;
+
+			   bm->read_block(ino->blocks[i],buf+i*BLOCK_SIZE);
+			   printf("readblock %d\n",ino->blocks[i]);
+			   printf("readblock buf=%s\n",*buf_out);
 			}
 		   if ( x < NDIRECT ) break;
 		   ino = get_inode(ino->blocks[NDIRECT]);
 	}
   }
   
+  printf("readblock before return\n");
   return;
 }
 
@@ -268,13 +274,15 @@ inode_manager::write_file(uint32_t inum, const char *buf, int size)
    * is larger or smaller than the size of original inode
    */
   struct inode *ino = get_inode(inum);
+
+	std::cout<<"[Jeffrey write_file] : size = " << size << ", inum = " << inum <<"\n\n";
   if (ino->used_blocks > 0){
 	//free used blocks
 	if (ino->used_blocks > NDIRECT){
 		free_inode(ino->blocks[NDIRECT]);
 		ino->used_blocks = NDIRECT;
 	}
-	for(int i=0;i<used_blocks;i++)	bm->free_block(ino->blocks[i]);
+	for(uint32_t i=0;i<ino->used_blocks;i++)	bm->free_block(ino->blocks[i]);
   }
   //alloc new blocks
   int need_block = size % BLOCK_SIZE>0 ? size / BLOCK_SIZE+1 : size / BLOCK_SIZE;
@@ -282,13 +290,15 @@ inode_manager::write_file(uint32_t inum, const char *buf, int size)
 	  return;
   }
   ino->size = size;
+
+	std::cout<<"[Jeffrey write_file] : ino->size = " << size << ", inum = " << inum <<"\n\n";
   restblocks -= need_block;
   int need_block2=0;
   if(need_block > NDIRECT){
 	need_block2 = need_block-NDIRECT;
 	need_block = NDIRECT;
   }  
-  ino->used_blocks = need_block+1;
+  ino->used_blocks = need_block;
   uint32_t a_block;
   for (int i=0;i<need_block;i++){
 	a_block = bm->alloc_block();
@@ -297,9 +307,10 @@ inode_manager::write_file(uint32_t inum, const char *buf, int size)
   }
   if(need_block2){
 	  uint32_t new_file = alloc_inode(extent_protocol::T_FILE);
-	  ino_blocks[NDIRECT]=new_file;
+	  ino->blocks[NDIRECT]=new_file;
 	  write_file(new_file,buf+NDIRECT*BLOCK_SIZE,size-NDIRECT*BLOCK_SIZE);
   }
+  put_inode(inum,ino);
   return;
 }
 
@@ -317,6 +328,7 @@ inode_manager::getattr(uint32_t inum, extent_protocol::attr &a)
   a.mtime = node->mtime;
   a.ctime = node->ctime;
   a.type = node->type;  
+	std::cout<<"[Jeffrey getattr] : size = " << node->size << ", inum = " << inum <<"\n\n";
   return;
 }
 

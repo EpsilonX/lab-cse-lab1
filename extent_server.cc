@@ -48,7 +48,8 @@ int extent_server::get(extent_protocol::extentid_t id, std::string &buf)
     buf = "";
   else {
     buf.assign(cbuf, size);
-    free(cbuf);
+	printf("server wirte buf=%s",cbuf);
+    //free(cbuf);
   }
 
   return extent_protocol::OK;
