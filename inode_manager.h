@@ -36,6 +36,11 @@ class block_manager {
  private:
   disk *d;
   std::map <uint32_t, int> using_blocks;
+  uint32_t bitmap[MAXMAP];
+  uint32_t p_bmp;
+  uint32_t set_bmp(uint32_t i, uint32_t flag);
+  uint32_t check_bmp(uint32_t i,uint32_t j);
+
  public:
   block_manager();
   struct superblock sb;
@@ -62,6 +67,9 @@ class block_manager {
 // Block containing bit for block b
 #define BBLOCK(b) ((b)/BPB + 2)
 
+// max bitmap size
+#define MAXMAP		(BLOCK_NUM)/32
+
 #define NDIRECT 32
 #define NINDIRECT (BLOCK_SIZE / sizeof(uint))
 #define MAXFILE (NDIRECT + NINDIRECT)
@@ -72,14 +80,17 @@ typedef struct inode {
   unsigned int atime;
   unsigned int mtime;
   unsigned int ctime;
+  unsigned int used_blocks;
   blockid_t blocks[NDIRECT+1];   // Data block addresses
 } inode_t;
 
 class inode_manager {
  private:
   block_manager *bm;
+  uint32_t last_inum;
   struct inode* get_inode(uint32_t inum);
   void put_inode(uint32_t inum, struct inode *ino);
+  int restblocks;
 
  public:
   inode_manager();

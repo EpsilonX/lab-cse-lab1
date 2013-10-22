@@ -1,4 +1,5 @@
 #include "inode_manager.h"
+#include "gettime.h"
 
 // disk layer -----------------------------------------
 
@@ -27,6 +28,22 @@ disk::write_block(blockid_t id, const char *buf)
 
 // block layer -----------------------------------------
 
+//set bmp
+uint32_t
+block_manager::set_bmp(uint32_t i,uint32_t flag)
+{  
+  bitmap[i/(8*sizeof(uint32_t))] |= flag<<(i%(8*sizeof(uint32_t)));
+  return 1;
+}
+
+//check bmp
+uint32_t
+block_manager::check_bmp(uint32_t i,uint32_t j)
+{
+   return bitmap[i]>>j&1; 
+}
+
+
 // Allocate a free disk block.
 blockid_t
 block_manager::alloc_block()
@@ -36,7 +53,27 @@ block_manager::alloc_block()
    * note: you should mark the corresponding bit in block bitmap when alloc.
    * you need to think about which block you can start to be allocated.
    */
-
+  blockid_t block_num;
+  if(p_bmp<=BLOCK_SIZE){
+	set_bmp(p_bmp,1);  
+	block_num = p_bmp;
+	p_bmp++;
+	return block_num;
+  }else{
+	for(int i=0;i<MAXMAP;i++){
+		if(bitmap[i] != 0xffffff){
+			for(int j=0;j<32;j++){
+				if(check_bmp(i,j)==0){
+					block_num = i*32+j;
+					set_bmp(block_num,1);
+					return block_num;
+				}			
+		}
+	  }
+	}
+					
+	  
+  }
   return 0;
 }
 
@@ -47,6 +84,7 @@ block_manager::free_block(uint32_t id)
    * your lab1 code goes here.
    * note: you should unmark the corresponding bit in the block bitmap when free.
    */
+  set_bmp(id,0);
   
   return;
 }
@@ -61,7 +99,9 @@ block_manager::block_manager()
   sb.size = BLOCK_SIZE * BLOCK_NUM;
   sb.nblocks = BLOCK_NUM;
   sb.ninodes = INODE_NUM;
-
+  p_bmp =INODE_NUM/IPB + BLOCK_NUM/BPB +3;
+  memset(bitmap,0,sizeof(uint32_t)*MAXMAP);
+  for(int i = 0;i<p_bmp;i++) set_bmp(i,1);
 }
 
 void
@@ -81,6 +121,8 @@ block_manager::write_block(uint32_t id, const char *buf)
 inode_manager::inode_manager()
 {
   bm = new block_manager();
+  last_inum = 0;
+  restblocks = BLOCK_NUM;
   uint32_t root_dir = alloc_inode(extent_protocol::T_DIR);
   if (root_dir != 1) {
     printf("\tim: error! alloc first inode %d, should be 1\n", root_dir);
@@ -98,7 +140,19 @@ inode_manager::alloc_inode(uint32_t type)
    * note: the normal inode block should begin from the 2nd inode block.
    * the 1st is used for root_dir, see inode_manager::inode_manager().
    */
-  return 1;
+	struct timespec tp;
+	if(clock_gettime(CLOCK_REALTIME,&tp)== -1){
+		return -1;
+	}	
+	last_inum ++;
+	struct inode *ino;
+	ino = (struct inode*)malloc(sizeof(struct inode));
+	ino->ctime = ino->atime = ino->mtime = tp.tv_sec;
+	ino->type = type;
+	ino->used_blocks = 0;
+	ino->size = 0;
+	put_inode(last_inum,ino);
+	return last_inum;
 }
 
 void
@@ -109,7 +163,18 @@ inode_manager::free_inode(uint32_t inum)
    * note: you need to check if the inode is already a freed one;
    * if not, clear it, and remember to write back to disk.
    */
-
+  struct inode *ino = get_inode(inum);
+  if(ino){
+	  if(ino->used_blocks > NDIRECT){
+		  ino->used_blocks = NDIRECT;
+		  free_inode(ino->blocks[NDIRECT]);
+	  } 
+	  for(int i=0;i<ino->used_blocks;i++){
+		  bm->free_block(ino->blocks[i]);
+	  }
+	  delete ino;
+  }
+ 
   return;
 }
 
@@ -172,6 +237,22 @@ inode_manager::read_file(uint32_t inum, char **buf_out, int *size)
    * note: read blocks related to inode number inum,
    * and copy them to buf_Out
    */
+  struct inode *ino = get_inode(inum);
+  if(ino){
+	*size = ino->size;
+	*buf_out = new char[*size];
+	char *buf = *buf_out;
+	while(true){
+	   int x = ino->used_blocks > NDIRECT ? NDIRECT:ino->used_blocks;
+		   char *block_buff;
+		   for(int i=0;i < x;i++){		
+			   bm->read_blocks(ino->blocks[i],block_buff);
+			   buf += block_buff;
+			}
+		   if ( x < NDIRECT ) break;
+		   ino = get_inode(ino->blocks[NDIRECT]);
+	}
+  }
   
   return;
 }
@@ -186,7 +267,39 @@ inode_manager::write_file(uint32_t inum, const char *buf, int size)
    * you need to consider the situation when the size of buf 
    * is larger or smaller than the size of original inode
    */
-  
+  struct inode *ino = get_inode(inum);
+  if (ino->used_blocks > 0){
+	//free used blocks
+	if (ino->used_blocks > NDIRECT){
+		free_inode(ino->blocks[NDIRECT]);
+		ino->used_blocks = NDIRECT;
+	}
+	for(int i=0;i<used_blocks;i++)	bm->free_block(ino->blocks[i]);
+  }
+  //alloc new blocks
+  int need_block = size % BLOCK_SIZE>0 ? size / BLOCK_SIZE+1 : size / BLOCK_SIZE;
+  if (restblocks - need_block < 0 ){
+	  return;
+  }
+  ino->size = size;
+  restblocks -= need_block;
+  int need_block2=0;
+  if(need_block > NDIRECT){
+	need_block2 = need_block-NDIRECT;
+	need_block = NDIRECT;
+  }  
+  ino->used_blocks = need_block+1;
+  uint32_t a_block;
+  for (int i=0;i<need_block;i++){
+	a_block = bm->alloc_block();
+	ino->blocks[i] = a_block;
+	bm->write_block(a_block,buf+i*BLOCK_SIZE);
+  }
+  if(need_block2){
+	  uint32_t new_file = alloc_inode(extent_protocol::T_FILE);
+	  ino_blocks[NDIRECT]=new_file;
+	  write_file(new_file,buf+NDIRECT*BLOCK_SIZE,size-NDIRECT*BLOCK_SIZE);
+  }
   return;
 }
 
@@ -198,7 +311,12 @@ inode_manager::getattr(uint32_t inum, extent_protocol::attr &a)
    * note: get the attributes of inode inum.
    * you can refer to "struct attr" in extent_protocol.h
    */
-  
+  struct inode *node = get_inode(inum);
+  a.size = node->size;
+  a.atime = node->atime;
+  a.mtime = node->mtime;
+  a.ctime = node->ctime;
+  a.type = node->type;  
   return;
 }
 
