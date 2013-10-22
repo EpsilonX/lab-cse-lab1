@@ -249,14 +249,16 @@ inode_manager::read_file(uint32_t inum, char **buf_out, int *size)
 	*buf_out = (char*)malloc(sizeof(char)*new_size);
 	char *buf = *buf_out;
 	while(true){
-	   int x = ino->used_blocks > NDIRECT ? NDIRECT:ino->used_blocks;
+	   int x = (ino->used_blocks > NDIRECT) ? NDIRECT:ino->used_blocks;
 	       printf("x= %d",x);
+		   printf("used_blocks= %d",ino->used_blocks);
 		   for(int i=0;i < x;i++){		
 
 			   bm->read_block(ino->blocks[i],buf+i*BLOCK_SIZE);
 			}
-		   if ( x <= NDIRECT ) break;
+		   if ( ino->used_blocks <= NDIRECT ) break;
 		   ino = get_inode(ino->blocks[NDIRECT]);
+		   buf += NDIRECT*BLOCK_SIZE;
 	}
 
 }
@@ -286,7 +288,7 @@ inode_manager::write_file(uint32_t inum, const char *buf, int size)
 	for(uint32_t i=0;i<ino->used_blocks;i++)	bm->free_block(ino->blocks[i]);
   }
   //alloc new blocks
-  int need_block = size % BLOCK_SIZE>0 ? size / BLOCK_SIZE+1 : size / BLOCK_SIZE;
+  int need_block = (size % BLOCK_SIZE>0) ? size / BLOCK_SIZE+1 : size / BLOCK_SIZE;
   if (restblocks - need_block < 0 ){
 	  return;
   }
@@ -306,6 +308,7 @@ inode_manager::write_file(uint32_t inum, const char *buf, int size)
 	bm->write_block(a_block,buf+i*BLOCK_SIZE);
   }
   if(need_block2){
+	  ino->used_blocks ++;
 	  uint32_t new_file = alloc_inode(extent_protocol::T_FILE);
 	  ino->blocks[NDIRECT]=new_file;
 	  write_file(new_file,buf+NDIRECT*BLOCK_SIZE,size-NDIRECT*BLOCK_SIZE);
