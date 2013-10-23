@@ -172,6 +172,7 @@ inode_manager::free_inode(uint32_t inum)
 		  ino->used_blocks = NDIRECT;
 		  free_inode(ino->blocks[NDIRECT]);
 	  } 
+	  restblocks += ino->used_blocks;
 	  for(uint32_t i=0;i<ino->used_blocks;i++){
 		  bm->free_block(ino->blocks[i]);
 	  }
@@ -282,6 +283,7 @@ inode_manager::write_file(uint32_t inum, const char *buf, int size)
 		free_inode(ino->blocks[NDIRECT]);
 		ino->used_blocks = NDIRECT;
 	}
+	restblocks += ino->used_blocks;
 	for(uint32_t i=0;i<ino->used_blocks;i++)	bm->free_block(ino->blocks[i]);
   }
   //alloc new blocks
