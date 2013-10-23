@@ -93,7 +93,6 @@ class inode_manager {
   struct inode* get_inode(uint32_t inum);
   void put_inode(uint32_t inum, struct inode *ino);
   int restblocks;
-  char *tempchar;	
 
  public:
   inode_manager();
